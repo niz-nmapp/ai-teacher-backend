@@ -1,0 +1,2 @@
+# ai-teacher-backend
+it can work to solve real time problem and we enjoy lotsbbcuhcjnjf hjfwuhfiv huihirj ijjenmnihc  huhirhf  ijfrijk  ggu3f i  ij4 u9ijjhfjnjdhdjbjghjbjfbjfbrifujbjsbwhbhblhbBFBUIUHQHHIOHbchebejbjbjjjbjdjjbvbjbujjhuhjjhuhijihuhkjhuguguuuguguguguhuyhiuyiu2hrqygggygyggueeguguuuy8y9y8yyyuyuyuyuyuyyuyuyuyyuyuyuuhug    hhugugynizsaamugbnbuguguhhhyhih88uihj
