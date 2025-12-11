@@ -1,5 +1,4 @@
-flask
-flask-cors
-pyttsx3
-requests
-gunicorn
+Flask==3.1.2
+Flask-CORS==6.0.1
+requests==2.32.5
+gunicorn==23.0.0
