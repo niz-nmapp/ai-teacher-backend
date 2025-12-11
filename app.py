@@ -8,7 +8,7 @@ app = Flask(__name__)
 CORS(app)  # Allow Android app to connect
 
 # 🔑 YOUR OPENROUTER API KEY (already included)
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "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"
 
 # AI Model configuration
 MODEL = "meta-llama/llama-3.2-3b-instruct"  # Free fast model
@@ -373,3 +373,4 @@ if __name__ == '__main__':
     print(f"🤖 Using model: {MODEL}")
     print(f"🔑 API Key configured: {'Yes' if OPENROUTER_API_KEY else 'No'}")
     app.run(host='0.0.0.0', port=port, debug=False)
+
