@@ -1,2 +1,16 @@
-# ai-teacher-backend
-it can work to solve real time problem and we enjoy lotsbbcuhcjnjf hjfwuhfiv huihirj ijjenmnihc  huhirhf  ijfrijk  ggu3f i  ij4 u9ijjhfjnjdhdjbjghjbjfbjfbrifujbjsbwhbhblhbBFBUIUHQHHIOHbchebejbjbjjjbjdjjbvbjbujjhuhjjhuhijihuhkjhuguguuuguguguguhuyhiuyiu2hrqygggygyggueeguguuuy8y9y8yyyuyuyuyuyuyyuyuyuyyuyuyuuhug    hhugugynizsaamugbnbuguguhhhyhih88uihj
+# 🤖 AI Teacher Backend
+
+Cloud backend for AI Teacher Android app.
+
+## 🚀 Live Deployment
+**URL**: https://ai-teacher-sepq.onrender.com
+
+## 🔗 API Endpoints
+- `GET /api/health` - Health check
+- `POST /api/ask` - Ask AI questions
+- `GET /api/test` - Test endpoint
+
+## 📱 Android App Configuration
+Update `BASE_URL` in Android app to:
+```kotlin
+const val BASE_URL = "https://ai-teacher-sepq.onrender.com"
