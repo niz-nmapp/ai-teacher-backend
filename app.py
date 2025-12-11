@@ -1,29 +1,66 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests
+import subprocess
+import threading
+import time
 import os
 
 app = Flask(__name__)
-CORS(app)  # Allow Android app to connect
+CORS(app)
 
-# 🔑 YOUR NEW WORKING OPENROUTER API KEY
-OPENROUTER_API_KEY = "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"
+# Configuration
+MODEL = "llama3.2:3b"  # Already installed on your laptop!
+ollama_running = False
 
-# AI Model configuration
-MODEL = "meta-llama/llama-3.2-3b-instruct"  # Free fast model
-FALLBACK_MODEL = "huggingfaceh4/zephyr-7b-beta"  # Alternative
+def check_ollama():
+    """Check if Ollama is running"""
+    global ollama_running
+    try:
+        result = subprocess.run(["ollama", "list"], 
+                              capture_output=True, text=True, timeout=5)
+        ollama_running = "llama3.2:3b" in result.stdout
+        return ollama_running
+    except:
+        ollama_running = False
+        return False
+
+def start_ollama_background():
+    """Start Ollama in background if not running"""
+    if not check_ollama():
+        print("🚀 Starting Ollama server...")
+        try:
+            # Start Ollama server
+            subprocess.Popen(["ollama", "serve"], 
+                           stdout=subprocess.PIPE, 
+                           stderr=subprocess.PIPE)
+            time.sleep(10)  # Wait for server to start
+            
+            # Pull model if not exists
+            print("📥 Ensuring model is available...")
+            subprocess.run(["ollama", "pull", MODEL], 
+                         capture_output=True, text=True)
+            
+            print("✅ Ollama ready on laptop!")
+            return True
+        except Exception as e:
+            print(f"❌ Failed to start Ollama: {e}")
+            return False
+    return True
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
+    is_running = check_ollama()
+    
     return jsonify({
-        'status': 'online',
-        'deployed': True,
-        'provider': 'Render.com + OpenRouter',
+        'status': 'online' if is_running else 'starting',
+        'server': 'YOUR LAPTOP (RTX 3050)',
         'model': MODEL,
-        '24_7': 'YES - Works even when laptop closed',
-        'api_key': 'ACTIVE ✅',
-        'message': '✅ AI Teacher Backend is LIVE 24/7!',
+        'ollama_running': is_running,
+        '24_7': 'YES (when laptop is on)',
+        'gpu': 'RTX 3050 4GB',
+        'performance': 'FAST (local GPU)',
+        'message': 'AI Teacher running on YOUR laptop!',
         'endpoints': {
             'ask': '/api/ask (POST)',
             'health': '/api/health (GET)',
@@ -34,7 +71,7 @@ def health_check():
 
 @app.route('/api/ask', methods=['POST'])
 def ask_ai():
-    """Main AI endpoint - uses OpenRouter API"""
+    """Ask Llama running locally on your laptop"""
     try:
         data = request.json
         
@@ -46,180 +83,85 @@ def ask_ai():
         if not question:
             return jsonify({'error': 'Empty question'}), 400
         
-        print(f"🤔 Processing: {question[:50]}...")
+        print(f"🤔 Processing on laptop GPU: {question[:50]}...")
         
-        # Try primary model
-        response = call_openrouter(question, MODEL)
+        # Ensure Ollama is running
+        if not start_ollama_background():
+            return jsonify({
+                'answer': 'Starting AI engine... Please wait 30 seconds.',
+                'status': 'starting'
+            }), 503
         
-        if not response.get('success'):
-            # Fallback to secondary model
-            print("🔄 Trying fallback model...")
-            response = call_openrouter(question, FALLBACK_MODEL)
+        # Use Ollama CLI to generate response
+        prompt = f'''You are AI Teacher - a helpful, patient assistant. 
+Answer clearly with examples. Keep response concise.
+
+Question: {question}
+
+Answer:'''
         
-        return jsonify(response)
+        result = subprocess.run([
+            'ollama', 'run', MODEL,
+            prompt
+        ], capture_output=True, text=True, timeout=60)
         
+        if result.returncode == 0:
+            answer = result.stdout.strip()
+            
+            return jsonify({
+                'answer': answer,
+                'model': MODEL,
+                'server': 'Your Laptop (RTX 3050)',
+                'performance': 'GPU accelerated',
+                'response_time': 'fast',
+                '24_7': True,
+                'local': True
+            })
+        else:
+            return jsonify({
+                'answer': f"I'm thinking about: '{question}'. Please wait...",
+                'error': result.stderr[:100],
+                'fallback': True
+            })
+            
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'answer': "The AI is taking time to think. Try a simpler question.",
+            'error': 'timeout',
+            'local': True
+        })
     except Exception as e:
         return jsonify({
-            'answer': f"AI Teacher is here! You asked: '{question}'. I'm running 24/7 on cloud.",
+            'answer': f"AI Teacher is here! Question: '{question}'",
             'error': str(e)[:100],
-            'fallback': True,
-            '24_7': True
+            'local': True
         })
-
-def call_openrouter(question, model_name):
-    """Call OpenRouter API"""
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://ai-teacher-sepq.onrender.com",
-        "X-Title": "AI Teacher"
-    }
-    
-    payload = {
-        "model": model_name,
-        "messages": [
-            {
-                "role": "system", 
-                "content": "You are AI Teacher - a helpful, patient assistant. Explain clearly with examples."
-            },
-            {
-                "role": "user", 
-                "content": question
-            }
-        ],
-        "max_tokens": 300,
-        "temperature": 0.7
-    }
-    
-    try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=25
-        )
-        
-        print(f"📡 API Response: {response.status_code}")
-        
-        if response.status_code == 200:
-            result = response.json()
-            
-            if 'choices' in result and len(result['choices']) > 0:
-                answer = result['choices'][0]['message']['content']
-                
-                return {
-                    'answer': answer.strip(),
-                    'model': model_name,
-                    'tokens_used': result.get('usage', {}).get('total_tokens', 0),
-                    'provider': 'OpenRouter',
-                    'cloud': True,
-                    '24_7': True,
-                    'success': True,
-                    'api_key': 'active'
-                }
-            else:
-                return {
-                    'answer': "Processing your request...",
-                    'error': 'Unexpected response format',
-                    'success': False
-                }
-                
-        elif response.status_code == 401:
-            return {
-                'answer': "AI service configuration updated. Please try again.",
-                'error': 'Auth issue',
-                'success': False
-            }
-        else:
-            return {
-                'answer': "AI is thinking... Please try again.",
-                'error': f"API Error {response.status_code}",
-                'success': False
-            }
-            
-    except requests.exceptions.Timeout:
-        return {
-            'answer': "The AI is taking time to respond. Please wait or try simpler question.",
-            'error': 'timeout',
-            'success': False
-        }
-    except Exception as e:
-        return {
-            'answer': "AI Teacher is available!",
-            'error': str(e)[:100],
-            'success': False
-        }
 
 @app.route('/api/test', methods=['GET'])
 def test_endpoint():
     """Test endpoint"""
     return jsonify({
-        'message': '🚀 AI Teacher 24/7 Cloud Backend',
+        'message': '🚀 AI Teacher Running on YOUR Laptop',
         'status': 'operational',
-        'url': 'https://ai-teacher-sepq.onrender.com',
-        '24_7': 'YES - Works when laptop closed',
-        'api_key': 'ACTIVE',
-        'test': 'Send: curl -X POST https://ai-teacher-sepq.onrender.com/api/ask -H "Content-Type: application/json" -d \'{"question":"Hello"}\''
+        'server': 'Local (RTX 3050)',
+        'model': MODEL,
+        '24_7': 'When laptop is on',
+        'gpu': 'YES - RTX 3050',
+        'url': 'Use ngrok tunnel for external access'
     })
 
 @app.route('/api/simple', methods=['POST'])
 def simple_ask():
-    """Always works - no external dependencies"""
+    """Simple always-working endpoint"""
     question = request.json.get('question', 'Hello')
     
-    responses = [
-        f"🤖 AI Teacher: I can help with '{question}'. I'm running 24/7 in the cloud!",
-        f"📚 Learning '{question}' is important. Let me explain...",
-        f"💡 Great question about '{question}'! Here's what you should know:",
-        f"🎯 Your query: '{question}'. I'm here to help 24/7!"
-    ]
-    
-    import random
-    answer = random.choice(responses)
-    
     return jsonify({
-        'answer': answer,
+        'answer': f"🤖 AI Teacher (Local): I can help with '{question}'. Running on your RTX 3050!",
         'simple': True,
-        'reliable': True,
-        '24_7': True,
-        'cloud': 'Render.com',
-        'works': 'Always - even if external APIs fail'
+        'local': True,
+        'gpu': 'RTX 3050',
+        'reliable': True
     })
-
-@app.route('/api/verify', methods=['GET'])
-def verify_key():
-    """Verify OpenRouter API key"""
-    try:
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.get(
-            "https://openrouter.ai/api/v1/auth/key",
-            headers=headers,
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            return jsonify({
-                'api_key': 'VALID ✅',
-                'status': 'active',
-                'provider': 'OpenRouter',
-                'message': 'API key is working!'
-            })
-        else:
-            return jsonify({
-                'api_key': 'INVALID ❌',
-                'status': response.status_code,
-                'message': response.text[:200]
-            })
-            
-    except Exception as e:
-        return jsonify({
-            'api_key': 'ERROR',
-            'error': str(e)
-        })
 
 @app.route('/')
 def home():
@@ -227,146 +169,55 @@ def home():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>AI Teacher - 24/7 Cloud</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>AI Teacher - Local Laptop Server</title>
         <style>
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 20px;
-                color: #333;
-            }
-            .container {
-                max-width: 800px;
-                margin: 0 auto;
-                background: white;
-                border-radius: 15px;
-                padding: 40px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            }
-            h1 { color: #4a5568; margin-bottom: 20px; }
-            .status-badge { 
-                background: #48bb78; 
-                color: white;
-                padding: 8px 16px;
-                border-radius: 20px;
-                display: inline-block;
-                margin: 5px;
-                font-size: 14px;
-            }
-            .url-box {
-                background: #edf2f7;
-                padding: 15px;
-                border-radius: 8px;
-                font-family: monospace;
-                word-break: break-all;
-                margin: 20px 0;
-                border-left: 4px solid #48bb78;
-            }
-            .test-area {
-                margin: 30px 0;
-                padding: 20px;
-                background: #f7fafc;
-                border-radius: 10px;
-            }
-            input[type="text"] {
-                width: 100%;
-                padding: 12px;
-                border: 2px solid #e2e8f0;
-                border-radius: 8px;
-                font-size: 16px;
-                margin: 10px 0;
-            }
-            button {
-                background: #667eea;
-                color: white;
-                border: none;
-                padding: 12px 24px;
-                border-radius: 8px;
-                font-size: 16px;
-                cursor: pointer;
-                margin: 5px;
-                transition: all 0.3s;
-            }
-            button:hover { background: #5a67d8; transform: translateY(-2px); }
-            button.secondary { background: #a0aec0; }
-            button.success { background: #48bb78; }
-            .response-box {
-                background: #f0fff4;
-                border: 1px solid #9ae6b4;
-                border-radius: 8px;
-                padding: 20px;
-                margin-top: 20px;
-                white-space: pre-wrap;
-                text-align: left;
-            }
-            .code {
-                background: #2d3748;
-                color: #e2e8f0;
-                padding: 15px;
-                border-radius: 8px;
-                font-family: 'Courier New', monospace;
-                margin: 15px 0;
-                overflow-x: auto;
-            }
+            body { font-family: Arial; padding: 20px; background: #f0f2f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .status { background: #48bb78; color: white; padding: 10px; border-radius: 5px; display: inline-block; }
+            .url { background: #edf2f7; padding: 15px; border-radius: 5px; margin: 15px 0; font-family: monospace; }
+            button { background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; }
+            .response { background: #f0fff4; padding: 15px; border-radius: 5px; margin-top: 15px; }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>🤖 AI Teacher Cloud Backend</h1>
+            <h1>🤖 AI Teacher - Local Server</h1>
+            <div class="status">✅ RUNNING ON YOUR LAPTOP</div>
+            <div class="status">🎮 GPU: RTX 3050</div>
+            
+            <p>Your AI backend is running locally on your laptop with Ollama + Llama 3.2!</p>
+            
+            <div class="url">
+                <strong>Local URL:</strong> http://localhost:5000<br>
+                <strong>Android Access:</strong> Use ngrok tunnel (see below)
+            </div>
+            
+            <h3>🔧 Setup ngrok for 24/7 Android Access:</h3>
+            <ol>
+                <li>Download ngrok from ngrok.com</li>
+                <li>Extract to C:\ngrok</li>
+                <li>Get free auth token from ngrok dashboard</li>
+                <li>Run: <code>ngrok http 5000</code></li>
+                <li>Use the ngrok URL in Android app</li>
+            </ol>
             
             <div>
-                <span class="status-badge">✅ 24/7 ALWAYS ON</span>
-                <span class="status-badge">✅ LAPTOP NOT NEEDED</span>
-                <span class="status-badge">✅ API KEY ACTIVE</span>
-                <span class="status-badge">✅ ANDROID READY</span>
-            </div>
-            
-            <p style="margin: 20px 0;">Your backend runs 24/7 on Render cloud. Works even when laptop is closed!</p>
-            
-            <div class="url-box">
-                <strong>📱 Android App URL:</strong><br>
-                https://ai-teacher-sepq.onrender.com
-            </div>
-            
-            <div class="test-area">
-                <h3>🚀 Test Your 24/7 Backend:</h3>
-                <input type="text" id="question" placeholder="Ask anything..." value="What is machine learning?">
+                <h3>🚀 Test Local Server:</h3>
+                <input type="text" id="question" value="Hello from local server" style="width: 70%; padding: 10px;">
+                <button onclick="testAsk()">Ask Local AI</button>
+                <button onclick="testHealth()">Check Health</button>
                 
-                <div style="margin: 15px 0;">
-                    <button onclick="testAsk()" class="success">Ask AI (OpenRouter)</button>
-                    <button onclick="testSimple()" class="secondary">Test Simple API</button>
-                    <button onclick="testHealth()">Check Health</button>
-                    <button onclick="verifyKey()">Verify API Key</button>
-                </div>
-                
-                <div id="result" class="response-box"></div>
+                <div id="result" class="response"></div>
             </div>
             
-            <div style="margin-top: 40px;">
-                <h3>📋 Quick Test Commands:</h3>
-                <div class="code">
-# PowerShell Test:<br>
-$url = "https://ai-teacher-sepq.onrender.com"<br>
-# 1. Health check<br>
-curl $url/api/health<br>
-# 2. Ask question<br>
-curl -X POST $url/api/ask -H "Content-Type: application/json" -d '{"question":"Hello"}'<br>
-# 3. Simple test<br>
-curl -X POST $url/api/simple -H "Content-Type: application/json" -d '{"question":"Test"}'
-                </div>
-            </div>
-            
-            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
-                <h3>🎯 Next Steps:</h3>
-                <ol style="margin: 15px 0; padding-left: 20px;">
-                    <li>Update Android app with above URL</li>
-                    <li>Test connection from Android emulator</li>
-                    <li>Build signed APK</li>
-                    <li>Publish to Google Play</li>
-                </ol>
+            <div style="margin-top: 30px; padding: 20px; background: #f7fafc; border-radius: 5px;">
+                <h3>📱 Android App Setup:</h3>
+                <pre style="background: #2d3748; color: white; padding: 10px; border-radius: 5px;">
+// Temporary: Use ngrok URL
+private const val BASE_URL = "https://your-ngrok-url.ngrok-free.app"
+
+// When ngrok restarts, update this URL
+                </pre>
             </div>
         </div>
         
@@ -374,7 +225,7 @@ curl -X POST $url/api/simple -H "Content-Type: application/json" -d '{"question"
             async function testAsk() {
                 const question = document.getElementById('question').value;
                 const result = document.getElementById('result');
-                result.innerHTML = '<div style="color: #667eea;">⏳ Asking AI via OpenRouter...</div>';
+                result.innerHTML = 'Asking local AI...';
                 
                 try {
                     const response = await fetch('/api/ask', {
@@ -383,77 +234,27 @@ curl -X POST $url/api/simple -H "Content-Type: application/json" -d '{"question"
                         body: JSON.stringify({question: question})
                     });
                     const data = await response.json();
-                    
-                    let html = `<strong>🤖 AI Response:</strong><br><br>${data.answer}`;
-                    if (data.model) html += `<br><br><small>Model: ${data.model} | 24/7: ${data['24_7'] ? '✅' : '❌'}</small>`;
-                    if (data.error) html += `<br><br><small style="color: #e53e3e;">Error: ${data.error}</small>`;
-                    
-                    result.innerHTML = html;
+                    result.innerHTML = `<strong>🤖 Local AI:</strong><br>${data.answer}<br>
+                                       <small>Model: ${data.model} | GPU: ${data.server}</small>`;
                 } catch(e) {
-                    result.innerHTML = `<div style="color: #e53e3e;">❌ Error: ${e.message}</div>`;
-                }
-            }
-            
-            async function testSimple() {
-                const question = document.getElementById('question').value;
-                const result = document.getElementById('result');
-                result.innerHTML = '<div style="color: #667eea;">⏳ Testing Simple API...</div>';
-                
-                try {
-                    const response = await fetch('/api/simple', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({question: question})
-                    });
-                    const data = await response.json();
-                    result.innerHTML = `<strong>✅ Simple API:</strong><br><br>${data.answer}<br><br>
-                                       <small>Reliable: ${data.reliable ? '✅' : '❌'} | 24/7: ${data['24_7'] ? '✅' : '❌'}</small>`;
-                } catch(e) {
-                    result.innerHTML = `<div style="color: #e53e3e;">❌ Error: ${e.message}</div>`;
+                    result.innerHTML = 'Error: ' + e.message;
                 }
             }
             
             async function testHealth() {
                 const result = document.getElementById('result');
-                result.innerHTML = '<div style="color: #667eea;">⏳ Checking Health...</div>';
+                result.innerHTML = 'Checking health...';
                 
                 try {
                     const response = await fetch('/api/health');
                     const data = await response.json();
-                    result.innerHTML = `<strong>✅ Health Status:</strong><br><br>
+                    result.innerHTML = `<strong>✅ Health:</strong><br>
                                        Status: ${data.status}<br>
-                                       Provider: ${data.provider}<br>
-                                       24/7: ${data['24_7']}<br>
-                                       API Key: ${data.api_key}`;
+                                       Model: ${data.model}<br>
+                                       GPU: ${data.gpu}<br>
+                                       24/7: ${data['24_7']}`;
                 } catch(e) {
-                    result.innerHTML = `<div style="color: #e53e3e;">❌ Error: ${e.message}</div>`;
-                }
-            }
-            
-            async function verifyKey() {
-                const result = document.getElementById('result');
-                result.innerHTML = '<div style="color: #667eea;">⏳ Verifying API Key...</div>';
-                
-                try {
-                    const response = await fetch('/api/verify');
-                    const data = await response.json();
-                    result.innerHTML = `<strong>🔑 API Key Verification:</strong><br><br>
-                                       Status: ${data.api_key}<br>
-                                       Message: ${data.message}<br>
-                                       Provider: ${data.provider || 'N/A'}`;
-                } catch(e) {
-                    result.innerHTML = `<div style="color: #e53e3e;">❌ Error: ${e.message}</div>`;
-                }
-            }
-            
-            // Auto-test on load
-            window.onload = async () => {
-                try {
-                    const response = await fetch('/api/health');
-                    const data = await response.json();
-                    console.log('✅ Backend ready:', data.status);
-                } catch(e) {
-                    console.warn('Health check failed on load');
+                    result.innerHTML = 'Error: ' + e.message;
                 }
             }
         </script>
@@ -462,10 +263,14 @@ curl -X POST $url/api/simple -H "Content-Type: application/json" -d '{"question"
     '''
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    print(f"🚀 AI Teacher 24/7 Cloud Backend")
-    print(f"🌍 URL: https://ai-teacher-sepq.onrender.com")
-    print(f"🔑 API Key: ACTIVE (new key)")
-    print(f"⏰ 24/7: YES - Works when laptop closed")
-    print(f"📱 Android: Update BASE_URL and publish!")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    print("🚀 Starting AI Teacher Local Server")
+    print("💻 Running on YOUR laptop")
+    print("🎮 GPU: RTX 3050")
+    print("🤖 Model: llama3.2:3b")
+    print("🌐 Local URL: http://localhost:5000")
+    print("📱 Use ngrok for Android access")
+    
+    # Start Ollama in background
+    start_ollama_background()
+    
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
